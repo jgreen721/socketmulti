@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="socket.io/socket.io.js"></script>
+    <title>~ Socket.IO Game App ~</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        text-align: center;
+        font-family: sans-serif;
+      }
+
+      .flex {
+        display: flex;
+        align-items: center;
+        justify-content: space-evenly;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- <h1>Canvas Video Game</h1>
+    <div class="flex">
+      <h4>TotalPlayer:<span class="players"></span></h4>
+    </div> -->
+    <canvas></canvas>
+
+    <!-- <p>Footer&copy;</p> -->
+
+    <script>
+      var canvas = document.querySelector("canvas");
+      var ctx = canvas.getContext("2d");
+      //   var playersEl = document.querySelector(".players");
+      let currPlayer = {};
+      let bullets = [];
+
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      class Player {
+        constructor(id, x, y, r, color) {
+          this.id = id;
+          this.x = x;
+          this.y = y;
+          this.r = r;
+          this.color = color;
+          this.vel = { x: 0, y: 0 };
+        }
+
+        draw() {
+          ctx.beginPath();
+          ctx.fillStyle = this.color;
+          ctx.arc(this.x, this.y, this.r, Math.PI * 2, false);
+          ctx.fill();
+        }
+
+        update() {
+          this.x += this.vel.x;
+          this.y += this.vel.y;
+          if (
+            (this.x < 0 && this.x > canvas.width) ||
+            this.y > canvas.height ||
+            this.y < 0
+          ) {
+            this.vel.x *= -1;
+            this.vel.y *= -1;
+          }
+        }
+      }
+
+      class Bullet {
+        constructor(shooterId, x, y, r, color, vel) {
+          this.shooterId = shooterId;
+          this.x = x;
+          this.y = y;
+          this.r = r;
+          this.color = color;
+          this.vel = vel;
+        }
+
+        draw() {
+          ctx.beginPath();
+          ctx.fillStyle = this.color;
+          ctx.arc(this.x, this.y, this.r, Math.PI * 2, false);
+          ctx.fill();
+        }
+
+        update() {
+          this.x += this.vel.x;
+          this.y += this.vel.y;
+          if (
+            (this.x < 0 && this.x > canvas.width) ||
+            this.y > canvas.height ||
+            this.y < 0
+          ) {
+            this.vel.x *= -1;
+            this.vel.y *= -1;
+          }
+        }
+      }
+
+      var players = [];
+
+      function animate() {
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        players.forEach((p, idx) => {
+          p.draw();
+          p.update();
+        });
+
+        bullets.forEach((b, idx) => {
+          b.draw();
+          b.update();
+        });
+
+        requestAnimationFrame(animate);
+      }
+
+      animate();
+    </script>
+
+    <script>
+      var socket = io();
+
+      function createPlayer(id) {
+        let playerX = (Math.random() * canvas.width) | 0;
+        let playerY = (Math.random() * canvas.height) | 0;
+        let color = `hsl(${(Math.random() * 200) | 0},100%,50%)`;
+        let playerR = (Math.random() * 10) | (0 + 5);
+
+        let player = { x: playerX, y: playerY, r: playerR, color: color };
+        return player;
+      }
+
+      socket.emit("player-joined", createPlayer());
+      //   socket.on("player-id", (id) => {
+      //     players.push(createPlayer(id));
+      //     console.log(players);
+      //   });
+
+      socket.on("cur-player", (player) => {
+        currPlayer = new Player(
+          player.id,
+          player.x,
+          player.y,
+          player.r,
+          player.color
+        );
+      });
+
+      socket.on("total-players", (totalPlayers) => {
+        players = [];
+        totalPlayers.forEach((p) => {
+          players.push(new Player(p.id, p.x, p.y, p.r, p.color));
+        });
+        console.log(players);
+        // playersEl.innerHTML = totalPlayers.length;
+      });
+
+      onkeydown = (e) => {
+        console.log(e.key);
+        if (e.key === "ArrowLeft") {
+          socket.emit("player-move", { x: -1, y: 0 });
+        }
+        if (e.key === "ArrowRight") {
+          socket.emit("player-move", { x: 1, y: 0 });
+        }
+        if (e.key === "ArrowUp") {
+          socket.emit("player-move", { x: 0, y: -1 });
+        }
+        if (e.key === "ArrowDown") {
+          socket.emit("player-move", { x: 0, y: 1 });
+        }
+      };
+
+      onkeyup = (e) => {
+        console.log("player stopped");
+
+        socket.emit("player-move", { x: 0, y: 0 });
+      };
+
+      onclick = (e) => {
+        console.log(currPlayer);
+        let angle = Math.atan2(
+          e.clientY - currPlayer.y,
+          e.clientX - currPlayer.x
+        );
+        let vel = { x: Math.cos(angle), y: Math.sin(angle) };
+        socket.emit("player-shoot", { vel });
+      };
+
+      socket.on("player-shoot", (bulletObj) => {
+        bullets.push(
+          new Bullet(
+            bulletObj.shooterId,
+            bulletObj.x,
+            bulletObj.y,
+            bulletObj.r,
+            bulletObj.color,
+            bulletObj.vel
+          )
+        );
+        console.log(bullets);
+      });
+
+      socket.on("player-move", (vel) => {
+        let idx = players.findIndex((p) => p.id === vel.id);
+        console.log("idx", idx, vel);
+        players[idx].vel.x = vel.vel.x;
+        players[idx].vel.y = vel.vel.y;
+      });
+    </script>
+  </body>
+</html>
